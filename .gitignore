@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+venv/
+.venv/
+*.egg-info/
+mcp_server/models/*.pkl
+mlruns/
+mlartifacts/
+.DS_Store
+*.log
