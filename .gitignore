@@ -9,3 +9,5 @@ mlruns/
 mlartifacts/
 .DS_Store
 *.log
+mlflow.db
+
