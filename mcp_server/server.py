@@ -12,6 +12,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp_server.tools.credit_score import get_credit_score as _get_credit_score
 from mcp_server.tools.dti import calculate_dti as _calculate_dti
 from mcp_server.tools.fraud_check import fraud_risk_check as _fraud_risk_check
+from mcp_server.tools.policy_rag import policy_lookup as _policy_lookup
 
 mcp = FastMCP("loan-underwriting-copilot")
 
@@ -41,8 +42,10 @@ def fraud_risk_check(applicant_data: dict) -> dict:
     return _fraud_risk_check(applicant_data)
 
 
-# Phase 3b: register a policy_lookup tool here once rag/policy.md exists and
-# mcp_server/tools/policy_rag.py is implemented.
+@mcp.tool()
+def policy_lookup(query: str, k: int = 3) -> list[str]:
+    """Retrieve the top-k underwriting policy sections most relevant to a query."""
+    return _policy_lookup(query, k)
 
 
 if __name__ == "__main__":
