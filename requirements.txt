@@ -2,6 +2,7 @@ fastapi
 uvicorn
 langchain
 langchain-mcp-adapters
+langchain-groq
 mcp
 xgboost
 mlflow

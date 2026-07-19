@@ -10,4 +10,6 @@ mlartifacts/
 .DS_Store
 *.log
 mlflow.db
+audit/audit_log.db
+personal_use
 
