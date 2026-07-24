@@ -28,7 +28,7 @@ def calculate_dti(
     annual_income: float,
     existing_debt: float,
     requested_loan_amount: float,
-    estimated_new_monthly_payment: float = None,
+    estimated_new_monthly_payment: float | None = None,
 ) -> dict:
     """Calculate an applicant's debt-to-income ratio against the standard 43% cutoff."""
     return _calculate_dti(

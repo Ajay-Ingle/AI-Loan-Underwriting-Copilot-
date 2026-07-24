@@ -7,7 +7,7 @@ def calculate_dti(
     annual_income: float,
     existing_debt: float,
     requested_loan_amount: float,
-    estimated_new_monthly_payment: float = None,
+    estimated_new_monthly_payment: float | None = None,
 ) -> dict:
     if estimated_new_monthly_payment is None:
         # Rough 5-year, no-interest amortization — just enough for a ballpark ratio.
