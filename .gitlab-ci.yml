@@ -2,6 +2,7 @@ stages:
   - lint
   - test
   - build
+  - deploy
 
 lint:
   stage: lint
@@ -57,3 +58,47 @@ build-and-push:
     # hand-off between separate build/push jobs in the first place.
     - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA"
     - docker push "$CI_REGISTRY_IMAGE:latest"
+
+deploy:
+  stage: deploy
+  image: alpine:3.20
+  needs:
+    - build-and-push
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  before_script:
+    - apk add --no-cache openssh-client curl
+  script:
+    - SSH_KEY_FILE="$EC2_SSH_PRIVATE_KEY"
+    - chmod 600 "$SSH_KEY_FILE"
+    # StrictHostKeyChecking=no (plus discarding known_hosts) skips host-key
+    # verification entirely — a real MITM exposure in general. We accept it here
+    # because this ephemeral runner has no pre-seeded known_hosts to check against
+    # anyway, and it's always connecting to the one known EC2 host for this project;
+    # the alternative (pinning the host key some other way) isn't worth it for a
+    # single-host deploy target.
+    - |
+      ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+          -i "$SSH_KEY_FILE" "ubuntu@${EC2_HOST}" bash -s <<EOF
+      set -e
+      docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD"
+      docker pull "$CI_REGISTRY_IMAGE:latest"
+      docker stop loan-underwriting-copilot || true
+      docker rm loan-underwriting-copilot || true
+      docker run -d --name loan-underwriting-copilot -p 8000:8000 \
+        -e GROQ_API_KEY="$GROQ_API_KEY" --restart unless-stopped \
+        "$CI_REGISTRY_IMAGE:latest"
+      EOF
+    - |
+      for i in 1 2 3 4 5 6; do
+        if curl -sf "http://${EC2_HOST}:8000/health"; then
+          echo "Deployment healthy."
+          exit 0
+        fi
+        echo "Health check attempt $i failed, retrying in 5s..."
+        sleep 5
+      done
+      echo "Deployment did not become healthy within 30s."
+      exit 1
