@@ -1,0 +1,75 @@
+stages:
+  - lint
+  - test
+  - build
+  - push-image
+
+lint:
+  stage: lint
+  image: python:3.12-slim
+  script:
+    - pip install --no-cache-dir ruff
+    # ruff's default exit code is non-zero on any violation, which fails the job
+    # (and pipeline) on lint errors — no --exit-zero or suppression here.
+    - ruff check mcp_server/ agent/ api/ audit/ ml/ rag/
+
+test:
+  stage: test
+  image: python:3.12-slim
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+    HF_HOME: "$CI_PROJECT_DIR/.cache/huggingface"
+  cache:
+    key: test-deps-v1
+    paths:
+      - .cache/pip
+      - .cache/huggingface
+  before_script:
+    # faiss-cpu/xgboost/torch all need libgomp (OpenMP) at import time.
+    - apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*
+    # The default PyPI `torch` wheel on Linux is CUDA-enabled and drags in several GB
+    # of nvidia-*/triton packages a CI runner never needs. Installing CPU-only torch
+    # first (same trick as the Dockerfile) satisfies sentence-transformers' unpinned
+    # `torch` dependency before pip ever reaches for the CUDA build.
+    - pip install --no-cache-dir --default-timeout=120 --retries 5 torch --index-url https://download.pytorch.org/whl/cpu
+    - pip install --no-cache-dir --default-timeout=120 --retries 5 -r requirements.txt
+  script:
+    - pytest tests/ -v
+
+build:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  script:
+    - docker build -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA" -t "$CI_REGISTRY_IMAGE:latest" .
+    # Save both tags to a tarball artifact so the push-image job (a separate stage,
+    # separate dind instance with no shared daemon state) can load and push them
+    # without rebuilding.
+    - docker save "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA" "$CI_REGISTRY_IMAGE:latest" -o image.tar
+  artifacts:
+    paths:
+      - image.tar
+    expire_in: 1 hour
+
+push-image:
+  stage: push-image
+  image: docker:24
+  services:
+    - docker:24-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  dependencies:
+    - build
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: never
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  before_script:
+    - docker load -i image.tar
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_SHA"
+    - docker push "$CI_REGISTRY_IMAGE:latest"
